@@ -83,11 +83,14 @@ app.get('/api/test-connection', async (req, res) => {
 
 // Main vendor application endpoint
 app.post('/api/vendor-application', async (req, res) => {
-    console.log('📥 Received vendor application:', {
-      vendorName: req.body.vendorName,
-      email: req.body.mainContactEmail,
-      timestamp: new Date().toISOString()
-    });
+      console.log('📥 Received vendor application:', {
+        vendorName: req.body.vendorName,
+        email: req.body.mainContactEmail,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Debug: Log all received data
+      console.log('📋 Full request body:', JSON.stringify(req.body, null, 2));
 
     try {
       // 1. Validate input data
