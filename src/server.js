@@ -91,6 +91,7 @@ app.post('/api/vendor-application', async (req, res) => {
       
       // Debug: Log all received data
       console.log('📋 Full request body:', JSON.stringify(req.body, null, 2));
+      console.log('🚀 Backend version: 2025-10-03-v2');
 
     try {
       // 1. Validate input data
