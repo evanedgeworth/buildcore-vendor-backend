@@ -99,19 +99,19 @@ app.post('/api/vendor-application', async (req, res) => {
         });
       }
 
-      // 2. Check for duplicates (if enabled)
-      if (process.env.ENABLE_DUPLICATE_CHECK === 'true') {
-        const isDuplicate = await mondayAPI.checkDuplicateVendor(
-          req.body.taxId,
-          req.body.mainContactEmail
-        );
-        if (isDuplicate) {
-          return res.status(409).json({
-            success: false,
-            error: 'A vendor with this Tax ID or email already exists in our system.'
-          });
-        }
-      }
+      // 2. Check for duplicates (disabled for now)
+      // if (process.env.ENABLE_DUPLICATE_CHECK === 'true') {
+      //   const isDuplicate = await mondayAPI.checkDuplicateVendor(
+      //     req.body.taxId,
+      //     req.body.mainContactEmail
+      //   );
+      //   if (isDuplicate) {
+      //     return res.status(409).json({
+      //       success: false,
+      //       error: 'A vendor with this Tax ID or email already exists in our system.'
+      //     });
+      //   }
+      // }
 
       // 3. Transform data for Monday.com
       const transformedData = transformFormData(req.body);
