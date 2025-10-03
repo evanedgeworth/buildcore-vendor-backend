@@ -18,7 +18,14 @@ app.use(helmet());
 
 // CORS configuration
 const corsOptions = {
-  origin: process.env.CORS_ORIGIN?.split(',') || '*',
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:8080', 
+    'https://*.netlify.app',
+    'https://*.herokuapp.com',
+    'file://',
+    'null'
+  ],
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type'],
   maxAge: 86400
