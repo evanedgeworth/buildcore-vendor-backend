@@ -82,14 +82,7 @@ app.get('/api/test-connection', async (req, res) => {
 });
 
 // Main vendor application endpoint
-app.post('/api/vendor-application',
-  upload.fields([
-    { name: 'w9Form', maxCount: 1 },
-    { name: 'glInsurance', maxCount: 1 },
-    { name: 'wcInsurance', maxCount: 1 },
-    { name: 'businessLicense', maxCount: 1 }
-  ]),
-  async (req, res) => {
+app.post('/api/vendor-application', async (req, res) => {
     console.log('📥 Received vendor application:', {
       vendorName: req.body.vendorName,
       email: req.body.mainContactEmail,
@@ -131,12 +124,7 @@ app.post('/api/vendor-application',
 
       console.log('✅ Created Monday.com item:', mondayItem.id);
 
-      // 5. Handle file uploads (if any)
-      if (req.files && Object.keys(req.files).length > 0) {
-        console.log('📎 Processing file uploads...');
-        const fileResults = await mondayAPI.uploadFiles(mondayItem.id, req.files);
-        console.log('✅ Files uploaded:', fileResults);
-      }
+      // 5. File uploads handled separately (not implemented yet)
 
       // 6. Send confirmation email (if enabled)
       if (process.env.ENABLE_AUTO_EMAIL === 'true' && process.env.SEND_EMAILS === 'true') {
