@@ -41,6 +41,7 @@ app.use('/api/', limiter);
 
 // File upload configuration
 const upload = multer({
+  storage: multer.memoryStorage(), // Store files in memory for Monday.com upload
   limits: { 
     fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB) || 10) * 1024 * 1024 
   },
@@ -81,8 +82,15 @@ app.get('/api/test-connection', async (req, res) => {
   }
 });
 
-// Main vendor application endpoint
-app.post('/api/vendor-application', async (req, res) => {
+// Main vendor application endpoint with file upload support
+app.post('/api/vendor-application',
+  upload.fields([
+    { name: 'w9Form', maxCount: 1 },
+    { name: 'glInsurance', maxCount: 1 },
+    { name: 'wcInsurance', maxCount: 1 },
+    { name: 'businessLicense', maxCount: 1 }
+  ]),
+  async (req, res) => {
       console.log('📥 Received vendor application:', {
         vendorName: req.body.vendorName,
         email: req.body.mainContactEmail,
@@ -117,22 +125,13 @@ app.post('/api/vendor-application', async (req, res) => {
       //   }
       // }
 
-      // 3. Transform data for Monday.com (with fallbacks for missing data)
+      // 3. Transform data for Monday.com
       const transformedData = transformFormData(req.body);
-      
-      // Add fallback data if fields are missing
-      if (!transformedData.name) transformedData.name = req.body.vendorName || 'Unknown Vendor';
-      if (!transformedData.email) transformedData.email = req.body.mainContactEmail || req.body.email || 'no-email@example.com';
-      if (!transformedData.phone) transformedData.phone = req.body.mainContactPhone || '555-000-0000';
-      if (!transformedData.address) transformedData.address = req.body.vendorAddress || 'No Address Provided';
-      if (!transformedData.primaryMarket) transformedData.primaryMarket = req.body.primaryMarket || 'Unknown';
-      if (!transformedData.primaryTrade) transformedData.primaryTrade = req.body.primaryTrade || 'Unknown';
-      if (!transformedData.numCrews) transformedData.numCrews = req.body.numCrews || '1';
-      if (!transformedData.serviceLine) transformedData.serviceLine = req.body.serviceLine || ['SFR'];
-      if (!transformedData.services) transformedData.services = req.body.services || ['General'];
-      if (!transformedData.certification) transformedData.certification = 'true';
 
       // 4. Create item in Monday.com
+      console.log('📊 Transformed column values being sent to Monday.com:');
+      console.log(JSON.stringify(transformedData, null, 2));
+      
       const mondayItem = await mondayAPI.createVendorItem(
         req.body.vendorName,
         transformedData
@@ -140,7 +139,21 @@ app.post('/api/vendor-application', async (req, res) => {
 
       console.log('✅ Created Monday.com item:', mondayItem.id);
 
-      // 5. File uploads handled separately (not implemented yet)
+      // 5. Handle file uploads to Google Drive
+      if (req.files && Object.keys(req.files).length > 0) {
+        console.log('📎 Uploading files to Google Drive...');
+        try {
+          const { uploadFilesToDrive } = require('./utils/googleDrive');
+          const driveResults = await uploadFilesToDrive(req.body.vendorName, req.files);
+          console.log('✅ Files uploaded to Google Drive');
+          
+          // Add file links to Monday.com Notes
+          await mondayAPI.addFileLinksToNotes(mondayItem.id, driveResults);
+        } catch (error) {
+          console.error('⚠️ File upload failed (non-fatal):', error.message);
+          // Don't fail the whole submission if file upload fails
+        }
+      }
 
       // 6. Send confirmation email (if enabled)
       if (process.env.ENABLE_AUTO_EMAIL === 'true' && process.env.SEND_EMAILS === 'true') {

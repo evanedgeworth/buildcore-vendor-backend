@@ -14,6 +14,7 @@ const COLUMN_MAPPINGS = {
   secondaryMarkets: 'additional_markets_mknb88ce', // Secondary Markets
   certifications: 'certifications_mknb9hp6',      // Certifications
   travelNotes: 'long_text_mkq15as',               // Travel Notes
+  referralBy: 'text_mknzaa23',                    // Referral By
   
   // Email columns
   mainEmail: 'email_mknbjaey',                    // Main Contact Email
@@ -105,8 +106,8 @@ const SERVICE_TO_COLUMN = {
   'Painting': 'painting',
   'Pest Control': 'pestControl',
   'Plumbing': 'plumbing',
-  'Roofing': 'roofing',
   'Rain Gutters': 'rainGutters',
+  'Roofing': 'roofing',
   'Septic': 'septic',
   'Tile': 'tile',
   'Water Restoration': 'waterRestoration'
@@ -119,17 +120,40 @@ function transformFormData(formData) {
   const columnValues = {};
   
   // Set default values (only if columns exist)
+  // Status columns use { label: 'value' } format
   if (COLUMN_MAPPINGS.status) {
-    columnValues[COLUMN_MAPPINGS.status] = { label: 'Pending' };
+    columnValues[COLUMN_MAPPINGS.status] = { label: 'New Lead' };
   }
-  if (COLUMN_MAPPINGS.source) {
+  
+  // Map Source column from referralSource field
+  if (COLUMN_MAPPINGS.source && formData.referralSource) {
+    // Map referral source to Monday.com's source column values
+    const sourceMap = {
+      'BC Website': 'BC Website',
+      'Google': 'BC Website',
+      'Bing': 'BC Website',
+      'LinkedIn': 'BC Website',
+      'Facebook': 'Facebook',
+      'Conference': 'BC Website',
+      'Email': 'Email Campaign',
+      'Referral': 'Existing Vendor', // Referral from current vendor
+      'Employee': 'Internal Reference',
+      'Internal Reference': 'Internal Reference',
+      'Other': 'BC Website'
+    };
+    columnValues[COLUMN_MAPPINGS.source] = { 
+      label: sourceMap[formData.referralSource] || 'BC Website'
+    };
+  } else if (COLUMN_MAPPINGS.source) {
+    // Default to BC Website if no referral source specified
     columnValues[COLUMN_MAPPINGS.source] = { label: 'BC Website' };
   }
   if (COLUMN_MAPPINGS.dateCreated) {
     columnValues[COLUMN_MAPPINGS.dateCreated] = { date: new Date().toISOString().split('T')[0] };
   }
   if (COLUMN_MAPPINGS.vendorContractEmailed) {
-    columnValues[COLUMN_MAPPINGS.vendorContractEmailed] = { date: new Date().toISOString().split('T')[0] };
+    // This is a status column, not a date
+    columnValues[COLUMN_MAPPINGS.vendorContractEmailed] = { label: 'Yes' };
   }
   
   // Map text fields
@@ -150,6 +174,13 @@ function transformFormData(formData) {
   }
   if (formData.travelNotes) {
     columnValues[COLUMN_MAPPINGS.travelNotes] = formData.travelNotes;
+  }
+  
+  // Map Referral By field - populate when Internal Reference or Employee referral
+  if (formData.referralSource === 'Internal Reference' && formData.referralEmployeeName) {
+    columnValues[COLUMN_MAPPINGS.referralBy] = formData.referralEmployeeName;
+  } else if (formData.referralSource === 'Employee' && formData.referralEmployeeName) {
+    columnValues[COLUMN_MAPPINGS.referralBy] = formData.referralEmployeeName;
   }
   
   // Map email fields
@@ -178,14 +209,15 @@ function transformFormData(formData) {
   if (formData.numCrews) {
     columnValues[COLUMN_MAPPINGS.numCrews] = parseInt(formData.numCrews) || 1;
   }
+  // Travel fields are TEXT columns, not NUMBER columns - send as strings
   if (formData.travelRadius) {
-    columnValues[COLUMN_MAPPINGS.travelRadius] = parseInt(formData.travelRadius) || 0;
+    columnValues[COLUMN_MAPPINGS.travelRadius] = String(formData.travelRadius);
   }
   if (formData.travelPeople) {
-    columnValues[COLUMN_MAPPINGS.travelPeople] = parseInt(formData.travelPeople) || 0;
+    columnValues[COLUMN_MAPPINGS.travelPeople] = String(formData.travelPeople);
   }
   
-  // Map dropdown fields - using safe defaults for status columns
+  // Map status fields - these use { label: 'value' } format (singular)
   if (formData.primaryMarket) {
     columnValues[COLUMN_MAPPINGS.primaryMarket] = { label: formData.primaryMarket };
   } else {
@@ -197,7 +229,33 @@ function transformFormData(formData) {
     if (trade === 'Other' && formData.primaryTradeOther) {
       trade = formData.primaryTradeOther;
     }
-    columnValues[COLUMN_MAPPINGS.primaryTrade] = { label: trade };
+    
+    // Map form values to Monday.com status labels
+    const tradeMap = {
+      'Electrical': 'Electrician',
+      'General Contractor': 'General Contractor',
+      'HVAC': 'HVAC',
+      'Plumbing': 'Plumbing',
+      'Flooring': 'Flooring',
+      'Painting': 'Painting',
+      'Roofing': 'Roofer',
+      'Carpentry': 'Carpentry',
+      'Drywall': 'Drywall',
+      'Cabinets': 'Cabinets',
+      'Countertops': 'Countertops',
+      'Cleaning': 'Cleaning',
+      'Landscaping': 'Landscaping',
+      'Pest Control': 'Pest Control',
+      'Foundation': 'Foundation',
+      'Glass/Windows': 'Glass/Windows',
+      'Garage Door': 'Garage Doors',
+      'Handyman/Small Jobs': 'Handyman/Small Jobs',
+      'Water Restoration': 'Water Restoration'
+    };
+    
+    columnValues[COLUMN_MAPPINGS.primaryTrade] = { 
+      label: tradeMap[trade] || trade 
+    };
   } else {
     columnValues[COLUMN_MAPPINGS.primaryTrade] = { label: 'General Contractor' }; // Default
   }
@@ -209,46 +267,57 @@ function transformFormData(formData) {
       'Virtual Card': 'Virtual Card'
     };
     columnValues[COLUMN_MAPPINGS.paymentMethod] = { 
-      label: paymentMap[formData.paymentMethod] || formData.paymentMethod 
+      label: paymentMap[formData.paymentMethod] || formData.paymentMethod
     };
   } else {
     columnValues[COLUMN_MAPPINGS.paymentMethod] = { label: 'ACH' }; // Default
   }
   
-  // Map service lines (combine if multiple)
+  // Map service lines - status column can only hold ONE value
+  // If multiple selected, use first and add others to notes
+  let additionalServiceLines = '';
   if (formData.serviceLine) {
     const serviceLines = Array.isArray(formData.serviceLine) 
-      ? formData.serviceLine.join(', ')
-      : formData.serviceLine;
-    columnValues[COLUMN_MAPPINGS.serviceLine] = { label: serviceLines };
+      ? formData.serviceLine
+      : [formData.serviceLine];
+    
+    // Use first service line in the status column
+    columnValues[COLUMN_MAPPINGS.serviceLine] = { label: serviceLines[0] };
+    
+    // If multiple selected, add the rest to notes
+    if (serviceLines.length > 1) {
+      additionalServiceLines = `Service Lines: ${serviceLines.join(', ')}`;
+    }
   } else {
     columnValues[COLUMN_MAPPINGS.serviceLine] = { label: 'SFR' }; // Default to SFR
   }
   
-  // Map secondary markets (dropdown format)
+  // Map secondary markets - dropdown column uses { labels: ['value'] } (plural with array)
+  // Monday.com dropdown columns have limits, so cap at 10 and add rest to notes
+  let additionalMarkets = '';
   if (formData.secondaryMarkets) {
     const markets = Array.isArray(formData.secondaryMarkets)
       ? formData.secondaryMarkets
       : [formData.secondaryMarkets];
-    columnValues[COLUMN_MAPPINGS.secondaryMarkets] = { 
-      label: markets[0] // Use first market for dropdown
-    };
+    
+    // Use first 10 markets in dropdown
+    const marketsForDropdown = markets.slice(0, 10);
+    columnValues[COLUMN_MAPPINGS.secondaryMarkets] = { labels: marketsForDropdown };
+    
+    // If more than 10, add the rest to notes
+    if (markets.length > 10) {
+      additionalMarkets = `Additional Secondary Markets: ${markets.slice(10).join(', ')}`;
+    }
   }
   
   // Map services to individual checkbox columns
   if (formData.services) {
     const services = Array.isArray(formData.services) ? formData.services : [formData.services];
     
-    // First, set all service checkboxes to false
-    Object.keys(SERVICE_TO_COLUMN).forEach(serviceName => {
-      const columnKey = SERVICE_TO_COLUMN[serviceName];
-      const columnId = COLUMN_MAPPINGS[columnKey];
-      if (columnId) {
-        columnValues[columnId] = { checked: false };
-      }
-    });
+    // Service checkboxes are status columns in Monday.com
+    // They need { label: 'Done' } for checked, or omit for unchecked
     
-    // Then set selected services to true
+    // Set selected services to "Done"
     services.forEach(service => {
       if (service === 'Other' && formData.servicesOther) {
         // Add to notes if "Other" service is specified
@@ -259,31 +328,38 @@ function transformFormData(formData) {
         const columnKey = SERVICE_TO_COLUMN[service];
         const columnId = COLUMN_MAPPINGS[columnKey];
         if (columnId) {
-          columnValues[columnId] = { checked: true };
+          // Status columns for checkboxes use label with a specific value
+          columnValues[columnId] = { label: 'Yes' };
         }
       }
     });
   }
   
-  // Map travel information
+  // Map travel information (status column uses label singular)
   if (formData.willTravel) {
     columnValues[COLUMN_MAPPINGS.willTravel] = { 
-      checked: formData.willTravel === 'Yes' 
+      label: formData.willTravel // 'Yes' or 'No'
     };
   }
   
   // Map insurance dates
   if (formData.glExpiration) {
     columnValues[COLUMN_MAPPINGS.glExpiration] = { date: formData.glExpiration };
-    columnValues[COLUMN_MAPPINGS.glReceived] = { checked: true };
+    columnValues[COLUMN_MAPPINGS.glReceived] = { label: 'Yes' };
   }
   if (formData.wcExpiration) {
     columnValues[COLUMN_MAPPINGS.wcExpiration] = { date: formData.wcExpiration };
-    columnValues[COLUMN_MAPPINGS.wcReceived] = { checked: true };
+    columnValues[COLUMN_MAPPINGS.wcReceived] = { label: 'Yes' };
   }
   
   // Map notes (combine various text fields)
   const noteParts = [];
+  if (additionalServiceLines) {
+    noteParts.push(additionalServiceLines);
+  }
+  if (additionalMarkets) {
+    noteParts.push(additionalMarkets);
+  }
   if (formData.notes) {
     noteParts.push(formData.notes);
   }
@@ -293,14 +369,9 @@ function transformFormData(formData) {
   if (formData.wcPolicyNumber) {
     noteParts.push(`WC Policy #: ${formData.wcPolicyNumber}`);
   }
-  if (formData.referralSource) {
-    let referral = formData.referralSource;
-    if (referral === 'Employee' && formData.referralEmployeeName) {
-      referral = `Employee - ${formData.referralEmployeeName}`;
-    } else if (referral === 'Other' && formData.referralSourceOther) {
-      referral = `Other - ${formData.referralSourceOther}`;
-    }
-    noteParts.push(`Referral: ${referral}`);
+  // Referral source is now mapped to Source column, only add Other details to notes
+  if (formData.referralSource === 'Other' && formData.referralSourceOther) {
+    noteParts.push(`Referral Source Other: ${formData.referralSourceOther}`);
   }
   
   if (noteParts.length > 0) {

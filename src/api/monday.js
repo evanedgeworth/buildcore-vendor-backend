@@ -159,65 +159,44 @@ async function createVendorItem(vendorName, columnValues) {
 }
 
 /**
- * Upload files to Monday.com item
+ * Add file links to Monday.com Notes column
+ * Files are uploaded to Google Drive, links stored in Monday.com
  */
-async function uploadFiles(itemId, files) {
-  const results = [];
+async function addFileLinksToNotes(itemId, driveUploadResults) {
+  if (!driveUploadResults || driveUploadResults.length === 0) return;
   
-  // File upload to Monday.com requires a different approach
-  // For now, we'll add file names to a text column as a placeholder
-  // In production, you'd want to use Monday's file upload endpoint
-  
-  const fileInfo = [];
-  
-  if (files.w9Form) {
-    fileInfo.push(`W9: ${files.w9Form[0].originalname}`);
-  }
-  if (files.glInsurance) {
-    fileInfo.push(`GL Insurance: ${files.glInsurance[0].originalname}`);
-  }
-  if (files.wcInsurance) {
-    fileInfo.push(`WC Insurance: ${files.wcInsurance[0].originalname}`);
-  }
-  if (files.businessLicense) {
-    fileInfo.push(`Business License: ${files.businessLicense[0].originalname}`);
-  }
-  
-  if (fileInfo.length > 0) {
-    // Update the notes column with file information
+  try {
+    const fileLinks = driveUploadResults
+      .filter(r => r.success)
+      .map(r => `${r.friendlyName}: ${r.viewLink}`)
+      .join('\n');
+    
+    if (!fileLinks) return;
+    
     const mutation = `
-      mutation UpdateItem($itemId: ID!, $columnValues: JSON!) {
-        change_column_value(
-          item_id: $itemId,
+      mutation {
+        change_multiple_column_values(
           board_id: ${MONDAY_BOARD_ID},
-          column_id: "notes",
-          value: $columnValues
+          item_id: ${itemId},
+          column_values: ${JSON.stringify(JSON.stringify({
+            notes_mknbkfs0: `Files:\n${fileLinks}`
+          }))}
         ) {
           id
         }
       }
     `;
     
-    const variables = {
-      itemId: itemId,
-      columnValues: JSON.stringify({
-        text: `Files uploaded: ${fileInfo.join(', ')}`
-      })
-    };
+    const response = await mondayClient.post('', { query: mutation });
     
-    try {
-      await mondayClient.post('', {
-        query: mutation,
-        variables
-      });
-      
-      results.push('File information added to notes');
-    } catch (error) {
-      console.error('Failed to update file information:', error.message);
+    if (response.data.errors) {
+      console.error('Failed to add file links to notes:', response.data.errors[0].message);
+    } else {
+      console.log(`✅ Added file links to Monday.com Notes`);
     }
+  } catch (error) {
+    console.error('Failed to update notes with file links:', error.message);
   }
-  
-  return results;
 }
 
 /**
@@ -255,6 +234,6 @@ module.exports = {
   testConnection,
   checkDuplicateVendor,
   createVendorItem,
-  uploadFiles,
+  addFileLinksToNotes,
   getColumnMappings
 };
