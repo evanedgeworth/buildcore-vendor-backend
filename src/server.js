@@ -8,8 +8,9 @@ require('dotenv').config();
 
 const mondayAPI = require('./api/monday');
 const { transformFormData } = require('./utils/transformer');
-const { validateVendorData } = require('./utils/validator');
+const { validateVendorData, isCoreFieldsComplete } = require('./utils/validator');
 const { sendConfirmationEmail, sendTeamNotification } = require('./utils/email');
+const { getPacificTimestamp, getPacificISO } = require('./utils/timezone');
 
 const app = express();
 
@@ -61,7 +62,7 @@ const upload = multer({
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
-    timestamp: new Date().toISOString(),
+    timestamp: getPacificTimestamp(),
     environment: process.env.NODE_ENV,
     monday_connected: !!process.env.MONDAY_API_KEY,
     board_configured: !!process.env.MONDAY_BOARD_ID
@@ -94,12 +95,23 @@ app.post('/api/vendor-application',
       console.log('📥 Received vendor application:', {
         vendorName: req.body.vendorName,
         email: req.body.mainContactEmail,
-        timestamp: new Date().toISOString()
+        timestamp: getPacificTimestamp()
       });
       
       // Debug: Log all received data
-      console.log('📋 Full request body:', JSON.stringify(req.body, null, 2));
-      console.log('🚀 Backend version: 2025-10-03-v2');
+      console.log('📋 Full request body (raw):', JSON.stringify(req.body, null, 2));
+      
+      // Normalize checkbox arrays - multer doesn't automatically convert multiple values to arrays
+      // Convert fields with multiple values into arrays
+      const multiValueFields = ['services', 'serviceLicense', 'serviceLine', 'secondaryMarkets'];
+      multiValueFields.forEach(fieldName => {
+        if (req.body[fieldName] && !Array.isArray(req.body[fieldName])) {
+          req.body[fieldName] = [req.body[fieldName]];
+        }
+      });
+      
+      console.log('📋 Normalized request body:', JSON.stringify(req.body, null, 2));
+      console.log('🚀 Backend version: 2025-10-08-licensed-trades-fix');
 
     try {
       // 1. Validate input data (temporarily disabled for debugging)
@@ -125,43 +137,94 @@ app.post('/api/vendor-application',
       //   }
       // }
 
-      // 3. Transform data for Monday.com
+      // 3. Check if core required fields are complete
+      const isComplete = isCoreFieldsComplete(req.body);
+      console.log(`📋 Submission completeness: ${isComplete ? 'COMPLETE' : 'INCOMPLETE'}`);
+      
+      // 4. Transform data for Monday.com
       const transformedData = transformFormData(req.body);
 
-      // 4. Create item in Monday.com
-      console.log('📊 Transformed column values being sent to Monday.com:');
-      console.log(JSON.stringify(transformedData, null, 2));
+      // 5. Check if vendor already exists (by Tax ID)
+      let mondayItem;
+      const existingItem = await mondayAPI.findVendorByTaxId(req.body.taxId);
       
-      const mondayItem = await mondayAPI.createVendorItem(
-        req.body.vendorName,
-        transformedData
-      );
-
-      console.log('✅ Created Monday.com item:', mondayItem.id);
-
-      // 5. Handle file uploads to Google Drive
-      if (req.files && Object.keys(req.files).length > 0) {
-        console.log('📎 Uploading files to Google Drive...');
-        try {
-          const { uploadFilesToDrive } = require('./utils/googleDrive');
-          const driveResults = await uploadFilesToDrive(req.body.vendorName, req.files);
-          console.log('✅ Files uploaded to Google Drive');
-          
-          // Add file links to Monday.com Notes
-          await mondayAPI.addFileLinksToNotes(mondayItem.id, driveResults);
-        } catch (error) {
-          console.error('⚠️ File upload failed (non-fatal):', error.message);
-          // Don't fail the whole submission if file upload fails
+      if (existingItem) {
+        console.log('🔄 Updating existing vendor item:', existingItem.id);
+        
+        // Update existing item with new data
+        await mondayAPI.updateVendorItem(existingItem.id, transformedData);
+        
+        // Check if we need to update the name (remove or add Incomplete tag at front)
+        const cleanName = req.body.vendorName || 'Unnamed Vendor';
+        const currentName = existingItem.name;
+        const hasIncompleteTag = currentName.startsWith('(Incomplete) ');
+        
+        if (isComplete && hasIncompleteTag) {
+          // Remove (Incomplete) tag from front
+          console.log('✅ Removing (Incomplete) tag from:', currentName);
+          await mondayAPI.updateItemName(existingItem.id, cleanName);
+        } else if (!isComplete && !hasIncompleteTag) {
+          // Add (Incomplete) tag to front
+          console.log('⚠️ Adding (Incomplete) tag to:', currentName);
+          await mondayAPI.updateItemName(existingItem.id, `(Incomplete) ${cleanName}`);
         }
+        
+        mondayItem = { id: existingItem.id, name: cleanName };
+      } else {
+        // Create new item
+        console.log('📊 Transformed column values being sent to Monday.com:');
+        console.log(JSON.stringify(transformedData, null, 2));
+        
+        mondayItem = await mondayAPI.createVendorItem(
+          req.body.vendorName || 'Unnamed Vendor',
+          transformedData,
+          isComplete
+        );
+        
+        console.log(`✅ Created Monday.com item: ${mondayItem.id} ${isComplete ? '' : '(Incomplete)'}`);
       }
 
-      // 6. Send confirmation email (if enabled)
+      // 6. Handle file uploads to Google Drive
+      if (req.files && Object.keys(req.files).length > 0) {
+        console.log('📎 Files received:', Object.keys(req.files));
+        console.log('📎 File details:', Object.entries(req.files).map(([key, files]) => ({
+          field: key,
+          count: files.length,
+          filenames: files.map(f => f.originalname)
+        })));
+        
+        // Check if Google Drive is configured
+        if (!process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE || !process.env.GOOGLE_SHARED_DRIVE_ID) {
+          console.error('⚠️ Google Drive not configured! Missing GOOGLE_SERVICE_ACCOUNT_KEY_FILE or GOOGLE_SHARED_DRIVE_ID');
+          console.log('📝 Files will NOT be uploaded to Google Drive');
+        } else {
+          console.log('📎 Uploading files to Google Drive...');
+          try {
+            const { uploadFilesToDrive } = require('./utils/googleDrive');
+            const driveResults = await uploadFilesToDrive(req.body.vendorName, req.files);
+            console.log('✅ Files uploaded to Google Drive:', driveResults.length, 'files');
+            console.log('📝 Upload results:', driveResults);
+            
+            // Add file links to Monday.com Files column
+            await mondayAPI.addFileLinksToFilesColumn(mondayItem.id, driveResults);
+            console.log('✅ File links added to Monday.com Files column');
+          } catch (error) {
+            console.error('❌ File upload failed (non-fatal):', error.message);
+            console.error('🔴 Full error:', error);
+            // Don't fail the whole submission if file upload fails
+          }
+        }
+      } else {
+        console.log('📝 No files uploaded with this submission');
+      }
+
+      // 7. Send confirmation email (if enabled)
       if (process.env.ENABLE_AUTO_EMAIL === 'true' && process.env.SEND_EMAILS === 'true') {
         await sendConfirmationEmail(req.body.mainContactEmail, req.body.vendorName);
         await sendTeamNotification(req.body, mondayItem.id);
       }
 
-      // 7. Return success response
+      // 8. Return success response
       res.json({
         success: true,
         message: 'Your vendor application has been successfully submitted!',

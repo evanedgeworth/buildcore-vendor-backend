@@ -81,7 +81,9 @@ const COLUMN_MAPPINGS = {
   w9Form: 'w9_form_mknb587z',                     // W9 Form
   
   // Long text columns
-  notes: 'notes_mknbkfs0'                         // Notes
+  notes: 'notes_mknbkfs0',                        // Notes
+  files: 'long_text_mkwgnz91',                    // Files (for upload links)
+  licensedTrades: 'text_mkwhh0jb'                 // Licensed Trades
 };
 
 // Service name mapping (form values to column names)
@@ -176,11 +178,23 @@ function transformFormData(formData) {
     columnValues[COLUMN_MAPPINGS.travelNotes] = formData.travelNotes;
   }
   
-  // Map Referral By field - populate when Internal Reference or Employee referral
+  // Map Licensed Trades - convert array to comma-separated string
+  if (formData.serviceLicense && Array.isArray(formData.serviceLicense) && formData.serviceLicense.length > 0) {
+    columnValues[COLUMN_MAPPINGS.licensedTrades] = formData.serviceLicense.join(', ');
+  }
+  
+  // Map Referral By field - populate when Internal Reference, Employee, or BuildCore Vendor referral
   if (formData.referralSource === 'Internal Reference' && formData.referralEmployeeName) {
     columnValues[COLUMN_MAPPINGS.referralBy] = formData.referralEmployeeName;
   } else if (formData.referralSource === 'Employee' && formData.referralEmployeeName) {
     columnValues[COLUMN_MAPPINGS.referralBy] = formData.referralEmployeeName;
+  } else if (formData.referralSource === 'Referral' && (formData.referralVendorName || formData.referralVendorPhone || formData.referralVendorEmail)) {
+    // Concatenate BuildCore vendor referral information
+    const referralParts = [];
+    if (formData.referralVendorName) referralParts.push(formData.referralVendorName);
+    if (formData.referralVendorPhone) referralParts.push(formData.referralVendorPhone);
+    if (formData.referralVendorEmail) referralParts.push(formData.referralVendorEmail);
+    columnValues[COLUMN_MAPPINGS.referralBy] = referralParts.join(' | ');
   }
   
   // Map email fields
@@ -220,8 +234,6 @@ function transformFormData(formData) {
   // Map status fields - these use { label: 'value' } format (singular)
   if (formData.primaryMarket) {
     columnValues[COLUMN_MAPPINGS.primaryMarket] = { label: formData.primaryMarket };
-  } else {
-    columnValues[COLUMN_MAPPINGS.primaryMarket] = { label: 'Dallas' }; // Default to Dallas
   }
   
   if (formData.primaryTrade) {
@@ -269,8 +281,6 @@ function transformFormData(formData) {
     columnValues[COLUMN_MAPPINGS.paymentMethod] = { 
       label: paymentMap[formData.paymentMethod] || formData.paymentMethod
     };
-  } else {
-    columnValues[COLUMN_MAPPINGS.paymentMethod] = { label: 'ACH' }; // Default
   }
   
   // Map service lines - status column can only hold ONE value
@@ -288,8 +298,6 @@ function transformFormData(formData) {
     if (serviceLines.length > 1) {
       additionalServiceLines = `Service Lines: ${serviceLines.join(', ')}`;
     }
-  } else {
-    columnValues[COLUMN_MAPPINGS.serviceLine] = { label: 'SFR' }; // Default to SFR
   }
   
   // Map secondary markets - dropdown column uses { labels: ['value'] } (plural with array)
