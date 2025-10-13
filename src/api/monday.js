@@ -173,17 +173,17 @@ async function addFileLinksToFilesColumn(itemId, driveUploadResults) {
   if (!driveUploadResults || driveUploadResults.length === 0) return;
   
   try {
-    // Format as simple clickable filename links (cleanest option)
-    // Markdown format: [filename](URL)
+    // Format as HTML links for Monday.com long text columns
+    // HTML <a> tags work in Monday.com long text columns and are clickable
     const fileLinks = driveUploadResults
       .filter(r => r.success)
       .map(r => {
         // Use just the filename as the clickable link text
         const filename = r.filename || r.friendlyName;
-        // Create simple markdown link: [filename.pdf](URL)
-        return `[${filename}](${r.viewLink})`;
+        // Create HTML link: <a href="URL">filename</a>
+        return `<a href="${r.viewLink}" target="_blank">${filename}</a>`;
       })
-      .join('  \n');  // Double space + newline for proper markdown line break
+      .join('<br>');  // HTML line break for proper spacing
     
     if (!fileLinks) return;
     
