@@ -193,9 +193,10 @@ app.post('/api/vendor-application',
           filenames: files.map(f => f.originalname)
         })));
         
-        // Check if Google Drive is configured
-        if (!process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE || !process.env.GOOGLE_SHARED_DRIVE_ID) {
-          console.error('⚠️ Google Drive not configured! Missing GOOGLE_SERVICE_ACCOUNT_KEY_FILE or GOOGLE_SHARED_DRIVE_ID');
+        // Check if Google Drive is configured (either env var or key file)
+        const hasCredentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY || process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE;
+        if (!hasCredentials || !process.env.GOOGLE_SHARED_DRIVE_ID) {
+          console.error('⚠️ Google Drive not configured! Missing credentials or GOOGLE_SHARED_DRIVE_ID');
           console.log('📝 Files will NOT be uploaded to Google Drive');
         } else {
           console.log('📎 Uploading files to Google Drive...');
