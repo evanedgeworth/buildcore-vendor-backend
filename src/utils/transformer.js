@@ -124,7 +124,7 @@ function transformFormData(formData) {
   // Set default values (only if columns exist)
   // Status columns use { label: 'value' } format
   if (COLUMN_MAPPINGS.status) {
-    columnValues[COLUMN_MAPPINGS.status] = { label: 'New Lead' };
+    columnValues[COLUMN_MAPPINGS.status] = { label: 'New Vendor' };
   }
   
   // Map Source column from referralSource field
