@@ -29,9 +29,9 @@ app.use(cors(corsOptions));
 // Logging
 app.use(morgan('combined'));
 
-// Body parsing
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// Body parsing - Multer handles multipart, these handle JSON/urlencoded
+// Note: Do NOT use app.use() for these - it interferes with multer
+// Apply these only to specific routes that need them
 
 // Rate limiting
 const limiter = rateLimit({
