@@ -218,6 +218,44 @@ function sanitizeFormData(data) {
   return sanitized;
 }
 
+/**
+ * Check if core required fields are complete
+ * Used to determine if item should be marked as (Incomplete)
+ * Returns true if ALL core fields are filled, false otherwise
+ */
+function isCoreFieldsComplete(data) {
+  const coreFields = [
+    'vendorName',
+    'taxId',
+    'numCrews',
+    'primaryTrade',
+    'mainContactName',
+    'mainContactPhone',
+    'mainContactEmail',
+    'vendorAddress',
+    'primaryMarket',
+    'paymentMethod',
+    'referralSource'
+  ];
+  
+  // Check if all core fields are filled
+  for (const field of coreFields) {
+    if (!data[field] || (typeof data[field] === 'string' && data[field].trim() === '')) {
+      return false;
+    }
+  }
+  
+  // Check if at least one service line is selected
+  if (!data.serviceLine || 
+      (Array.isArray(data.serviceLine) && data.serviceLine.length === 0) ||
+      (typeof data.serviceLine === 'string' && data.serviceLine.trim() === '')) {
+    return false;
+  }
+  
+  // All core fields are filled
+  return true;
+}
+
 module.exports = {
   validateVendorData,
   isValidEmail,
@@ -225,5 +263,6 @@ module.exports = {
   isValidTaxId,
   isValidFutureDate,
   sanitizeInput,
-  sanitizeFormData
+  sanitizeFormData,
+  isCoreFieldsComplete
 };

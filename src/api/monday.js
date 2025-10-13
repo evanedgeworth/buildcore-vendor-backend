@@ -113,8 +113,11 @@ async function checkDuplicateVendor(taxId, email) {
 
 /**
  * Create a new vendor item in Monday.com
+ * @param {string} vendorName - The vendor company name
+ * @param {object} columnValues - Column values to set
+ * @param {boolean} isComplete - Whether all core fields are filled
  */
-async function createVendorItem(vendorName, columnValues) {
+async function createVendorItem(vendorName, columnValues, isComplete = true) {
   const mutation = `
     mutation CreateVendorItem($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
       create_item(
@@ -128,9 +131,12 @@ async function createVendorItem(vendorName, columnValues) {
     }
   `;
 
+  // Prepend (Incomplete) to name if core fields are not filled (easier to sort)
+  const displayName = isComplete ? vendorName : `(Incomplete) ${vendorName}`;
+  
   const variables = {
     boardId: MONDAY_BOARD_ID,
-    itemName: vendorName,
+    itemName: displayName,
     columnValues: JSON.stringify(columnValues)
   };
 
@@ -159,17 +165,25 @@ async function createVendorItem(vendorName, columnValues) {
 }
 
 /**
- * Add file links to Monday.com Notes column
- * Files are uploaded to Google Drive, links stored in Monday.com
+ * Add file links to Monday.com Files column
+ * Files are uploaded to Google Drive, links stored in dedicated Files column
+ * Uses Markdown format for clickable, readable links
  */
-async function addFileLinksToNotes(itemId, driveUploadResults) {
+async function addFileLinksToFilesColumn(itemId, driveUploadResults) {
   if (!driveUploadResults || driveUploadResults.length === 0) return;
   
   try {
+    // Format as simple clickable filename links (cleanest option)
+    // Markdown format: [filename](URL)
     const fileLinks = driveUploadResults
       .filter(r => r.success)
-      .map(r => `${r.friendlyName}: ${r.viewLink}`)
-      .join('\n');
+      .map(r => {
+        // Use just the filename as the clickable link text
+        const filename = r.filename || r.friendlyName;
+        // Create simple markdown link: [filename.pdf](URL)
+        return `[${filename}](${r.viewLink})`;
+      })
+      .join('  \n');  // Double space + newline for proper markdown line break
     
     if (!fileLinks) return;
     
@@ -179,7 +193,7 @@ async function addFileLinksToNotes(itemId, driveUploadResults) {
           board_id: ${MONDAY_BOARD_ID},
           item_id: ${itemId},
           column_values: ${JSON.stringify(JSON.stringify({
-            notes_mknbkfs0: `Files:\n${fileLinks}`
+            long_text_mkwgnz91: fileLinks
           }))}
         ) {
           id
@@ -190,12 +204,136 @@ async function addFileLinksToNotes(itemId, driveUploadResults) {
     const response = await mondayClient.post('', { query: mutation });
     
     if (response.data.errors) {
-      console.error('Failed to add file links to notes:', response.data.errors[0].message);
+      console.error('Failed to add file links to Files column:', response.data.errors[0].message);
     } else {
-      console.log(`✅ Added file links to Monday.com Notes`);
+      console.log(`✅ Added file links to Monday.com Files column`);
     }
   } catch (error) {
-    console.error('Failed to update notes with file links:', error.message);
+    console.error('Failed to update Files column with file links:', error.message);
+  }
+}
+
+/**
+ * Find existing vendor item by Tax ID
+ * @param {string} taxId - Business Tax ID to search for
+ * @returns {Promise<object|null>} - Found item or null
+ */
+async function findVendorByTaxId(taxId) {
+  if (!taxId || !taxId.trim()) return null;
+  
+  const query = `
+    query {
+      boards(ids: [${MONDAY_BOARD_ID}]) {
+        items_page(limit: 500) {
+          items {
+            id
+            name
+            column_values(ids: ["business_tax___mknb862c"]) {
+              id
+              text
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    const response = await mondayClient.post('', { query });
+    
+    if (response.data.errors) {
+      console.error('Error finding vendor:', response.data.errors);
+      return null;
+    }
+
+    const items = response.data.data.boards[0]?.items_page?.items || [];
+    
+    // Find item with matching tax ID
+    for (const item of items) {
+      const taxIdCol = item.column_values.find(col => col.id === 'business_tax___mknb862c');
+      if (taxIdCol && taxIdCol.text && taxIdCol.text.trim() === taxId.trim()) {
+        console.log(`Found existing vendor: ${item.name} (ID: ${item.id})`);
+        return item;
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error finding vendor by Tax ID:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Update existing vendor item with new data
+ * @param {string} itemId - Monday.com item ID
+ * @param {object} columnValues - Column values to update
+ * @returns {Promise<object>} - Updated item
+ */
+async function updateVendorItem(itemId, columnValues) {
+  const mutation = `
+    mutation {
+      change_multiple_column_values(
+        board_id: ${MONDAY_BOARD_ID},
+        item_id: ${itemId},
+        column_values: ${JSON.stringify(JSON.stringify(columnValues))}
+      ) {
+        id
+        name
+      }
+    }
+  `;
+
+  try {
+    const response = await mondayClient.post('', { query: mutation });
+    
+    if (response.data.errors) {
+      console.error('Monday.com API errors:', response.data.errors);
+      throw new Error(response.data.errors[0].message);
+    }
+
+    console.log(`Updated Monday.com item: ${itemId}`);
+    return response.data.data.change_multiple_column_values;
+  } catch (error) {
+    console.error('Failed to update Monday.com item:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Update item name (to remove or add (Incomplete) tag)
+ * @param {string} itemId - Monday.com item ID
+ * @param {string} newName - New name for the item
+ * @returns {Promise<object>} - Updated item
+ */
+async function updateItemName(itemId, newName) {
+  const mutation = `
+    mutation {
+      change_simple_column_value(
+        board_id: ${MONDAY_BOARD_ID},
+        item_id: ${itemId},
+        column_id: "name",
+        value: ${JSON.stringify(newName)}
+      ) {
+        id
+        name
+      }
+    }
+  `;
+
+  try {
+    const response = await mondayClient.post('', { query: mutation });
+    
+    if (response.data.errors) {
+      console.error('Monday.com API errors:', response.data.errors);
+      throw new Error(response.data.errors[0].message);
+    }
+
+    console.log(`Updated item name to: ${newName}`);
+    return response.data.data.change_simple_column_value;
+  } catch (error) {
+    console.error('Failed to update item name:', error.message);
+    throw error;
   }
 }
 
@@ -234,6 +372,9 @@ module.exports = {
   testConnection,
   checkDuplicateVendor,
   createVendorItem,
-  addFileLinksToNotes,
-  getColumnMappings
+  addFileLinksToFilesColumn,
+  getColumnMappings,
+  findVendorByTaxId,
+  updateVendorItem,
+  updateItemName
 };
