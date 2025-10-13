@@ -8,10 +8,23 @@ const stream = require('stream');
 
 // Initialize Google Drive API client
 function getDriveClient() {
-  const auth = new google.auth.GoogleAuth({
-    keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE,
-    scopes: ['https://www.googleapis.com/auth/drive.file'],
-  });
+  let auth;
+  
+  // Try environment variable first (Heroku), then keyFile (local)
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+    auth = new google.auth.GoogleAuth({
+      credentials: credentials,
+      scopes: ['https://www.googleapis.com/auth/drive.file'],
+    });
+  } else if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE) {
+    auth = new google.auth.GoogleAuth({
+      keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE,
+      scopes: ['https://www.googleapis.com/auth/drive.file'],
+    });
+  } else {
+    throw new Error('Google Drive credentials not configured. Set GOOGLE_SERVICE_ACCOUNT_KEY or GOOGLE_SERVICE_ACCOUNT_KEY_FILE');
+  }
   
   return google.drive({ version: 'v3', auth });
 }
