@@ -155,7 +155,7 @@ function transformFormData(formData) {
   }
   if (COLUMN_MAPPINGS.vendorContractEmailed) {
     // This is a status column, not a date
-    columnValues[COLUMN_MAPPINGS.vendorContractEmailed] = { label: 'Yes' };
+    columnValues[COLUMN_MAPPINGS.vendorContractEmailed] = { label: 'No' };
   }
   
   // Map text fields
