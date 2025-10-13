@@ -173,17 +173,16 @@ async function addFileLinksToFilesColumn(itemId, driveUploadResults) {
   if (!driveUploadResults || driveUploadResults.length === 0) return;
   
   try {
-    // Format as HTML links for Monday.com long text columns
-    // HTML <a> tags work in Monday.com long text columns and are clickable
+    // Format as plain URLs - Monday.com auto-converts URLs to clickable links
+    // Include filename for reference
     const fileLinks = driveUploadResults
       .filter(r => r.success)
       .map(r => {
-        // Use just the filename as the clickable link text
         const filename = r.filename || r.friendlyName;
-        // Create HTML link: <a href="URL">filename</a>
-        return `<a href="${r.viewLink}" target="_blank">${filename}</a>`;
+        // Plain URL with filename label - Monday.com makes URLs clickable automatically
+        return `${filename}: ${r.viewLink}`;
       })
-      .join('<br>');  // HTML line break for proper spacing
+      .join('\n\n');  // Double newline for spacing
     
     if (!fileLinks) return;
     
