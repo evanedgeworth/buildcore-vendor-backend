@@ -1,0 +1,29 @@
+# Monday.com Configuration
+MONDAY_API_KEY=eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjM4MzYwODYwMSwiYWFpIjoxMSwidWlkIjo2MTI4ODE2MCwiaWFkIjoiMjAyNC0wNy0xMlQxMTozMzozOS4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MjM1OTg1MDYsInJnbiI6InVzZTEifQ.uRhOrpfIAKrsTQ6-chvpTJMNun1mdB6gVNMbFvgJD7c
+MONDAY_API_URL=https://api.monday.com/v2
+MONDAY_BOARD_ID=8584274720
+
+# Server Configuration
+PORT=3001
+NODE_ENV=development
+
+# CORS Configuration - includes your Netlify site
+CORS_ORIGIN=http://localhost:8080,https://buildcore-vendor-application.netlify.app,http://127.0.0.1:5500
+
+# Email Configuration (disabled for now)
+SEND_EMAILS=false
+FROM_EMAIL=vendorsupport@mybuildcore.com
+TEAM_EMAIL=vendorsupport@mybuildcore.com
+
+# File Upload Configuration
+MAX_FILE_SIZE_MB=10
+ALLOWED_FILE_TYPES=pdf,jpg,jpeg,png
+
+# Rate Limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+
+# Features
+ENABLE_DUPLICATE_CHECK=true
+ENABLE_AUTO_EMAIL=false
+ENABLE_FILE_UPLOAD=true
