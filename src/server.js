@@ -44,7 +44,10 @@ app.use('/api/', limiter);
 const upload = multer({
   storage: multer.memoryStorage(), // Store files in memory for Monday.com upload
   limits: { 
-    fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB) || 10) * 1024 * 1024 
+    fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB) || 10) * 1024 * 1024,
+    fieldSize: 1024 * 1024, // 1MB limit for field values
+    fieldNameSize: 100,
+    files: 10 // Maximum number of files
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = process.env.ALLOWED_FILE_TYPES?.split(',') || ['pdf', 'jpg', 'jpeg', 'png'];
@@ -79,6 +82,78 @@ app.get('/api/test-connection', async (req, res) => {
       success: false, 
       error: error.message,
       details: 'Check your MONDAY_API_KEY and MONDAY_BOARD_ID in .env file'
+    });
+  }
+});
+
+// Resume application endpoint - lookup incomplete submissions
+app.get('/api/resume-application', async (req, res) => {
+  try {
+    const { email } = req.query;
+    
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email address is required'
+      });
+    }
+    
+    console.log(`🔍 Looking up application for email: ${email}`);
+    
+    // Find vendor by email only
+    const existingVendor = await mondayAPI.findVendorByEmail(email);
+    
+    if (!existingVendor) {
+      return res.json({
+        success: false,
+        message: 'No application found with that email address'
+      });
+    }
+    
+    // Check if email matches (basic validation)
+    const vendorEmail = existingVendor.column_values?.find(col => 
+      col.id === 'email_mkp0f0ec' // Main contact email column ID
+    )?.text;
+    
+    if (vendorEmail && vendorEmail.toLowerCase() !== email.toLowerCase()) {
+      return res.json({
+        success: false,
+        message: 'Email does not match the Tax ID provided'
+      });
+    }
+    
+    // Extract form data from Monday.com item
+    const formData = mondayAPI.extractFormDataFromItem(existingVendor);
+    
+    // Mask sensitive data (Tax ID/SSN) for security
+    if (formData.taxId) {
+      const taxId = formData.taxId;
+      if (taxId.length >= 4) {
+        // Show only last 4 digits: XX-XXXXX89 or XXX-XX-XX89
+        formData.taxId = taxId.replace(/.(?=.{4})/g, 'X');
+      }
+    }
+    
+    // Determine if submission is complete
+    const isComplete = isCoreFieldsComplete(formData);
+    
+    console.log(`📋 Found application: ${existingVendor.name}, Complete: ${isComplete}`);
+    
+    res.json({
+      success: true,
+      submission: {
+        ...formData,
+        isComplete,
+        lastStep: isComplete ? 5 : 1, // If complete, go to review; otherwise start from step 1
+        mondayItemId: existingVendor.id
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error looking up application:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
     });
   }
 });
@@ -190,7 +265,7 @@ app.post('/api/vendor-application',
         console.log('📎 File details:', Object.entries(req.files).map(([key, files]) => ({
           field: key,
           count: files.length,
-          filenames: files.map(f => f.originalname)
+          filenames: files.map(f => `${f.originalname} (${f.size} bytes)`)
         })));
         
         // Check if Google Drive is configured (either env var or key file)
@@ -260,12 +335,49 @@ app.post('/api/vendor-application',
 // Error handling middleware
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({
-        success: false,
-        error: `File too large. Maximum size is ${process.env.MAX_FILE_SIZE_MB}MB`
-      });
+    console.error('Multer error:', error.code, error.message);
+    
+    switch (error.code) {
+      case 'LIMIT_FILE_SIZE':
+        return res.status(400).json({
+          success: false,
+          error: `File too large. Maximum size is ${process.env.MAX_FILE_SIZE_MB}MB`
+        });
+      case 'LIMIT_FIELD_SIZE':
+        return res.status(400).json({
+          success: false,
+          error: 'Field value too large'
+        });
+      case 'LIMIT_FIELD_COUNT':
+        return res.status(400).json({
+          success: false,
+          error: 'Too many fields'
+        });
+      case 'LIMIT_FILE_COUNT':
+        return res.status(400).json({
+          success: false,
+          error: 'Too many files'
+        });
+      case 'LIMIT_UNEXPECTED_FILE':
+        return res.status(400).json({
+          success: false,
+          error: 'Unexpected file field'
+        });
+      default:
+        return res.status(400).json({
+          success: false,
+          error: `File upload error: ${error.message}`
+        });
     }
+  }
+  
+  // Handle other multipart parsing errors
+  if (error.message && error.message.includes('Unexpected end of form')) {
+    console.error('Multipart parsing error:', error.message);
+    return res.status(400).json({
+      success: false,
+      error: 'Form data was incomplete or corrupted. Please try again.'
+    });
   }
   
   console.error('Unhandled error:', error);

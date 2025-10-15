@@ -51,11 +51,18 @@ async function uploadFilesToDrive(vendorName, files) {
   const vendorFolderId = await createVendorFolder(drive, vendorName, sharedDriveId);
   
   // Upload each file
+  console.log('📁 Files received for upload:', Object.keys(files));
+  
   for (const [fieldName, fileArray] of Object.entries(files)) {
-    if (!fileArray || fileArray.length === 0) continue;
+    if (!fileArray || fileArray.length === 0) {
+      console.log(`⚠️ No files for field: ${fieldName}`);
+      continue;
+    }
     
     const file = fileArray[0];
     const friendlyName = fileMapping[fieldName] || fieldName;
+    
+    console.log(`📤 Processing field: ${fieldName}, file: ${file.originalname}, size: ${file.size}`);
     
     try {
       console.log(`📤 Uploading ${friendlyName} to Google Drive...`);

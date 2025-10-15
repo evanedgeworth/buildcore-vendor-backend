@@ -263,6 +263,54 @@ async function findVendorByTaxId(taxId) {
   }
 }
 
+async function findVendorByEmail(email) {
+  if (!email || !email.trim()) return null;
+  
+  const query = `
+    query {
+      boards(ids: [${MONDAY_BOARD_ID}]) {
+        items_page(limit: 500) {
+          items {
+            id
+            name
+            column_values {
+              id
+              text
+              value
+              type
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    const response = await mondayClient.post('', { query });
+    
+    if (response.data.errors) {
+      console.error('Error finding vendor by email:', response.data.errors);
+      return null;
+    }
+
+    const items = response.data.data.boards[0]?.items_page?.items || [];
+    
+    // Find item with matching email
+    for (const item of items) {
+      const emailCol = item.column_values.find(col => col.id === 'email_mknbjaey');
+      if (emailCol && emailCol.text && emailCol.text.toLowerCase().trim() === email.toLowerCase().trim()) {
+        console.log(`Found existing vendor: ${item.name} (ID: ${item.id})`);
+        return item;
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error finding vendor by email:', error.message);
+    return null;
+  }
+}
+
 /**
  * Update existing vendor item with new data
  * @param {string} itemId - Monday.com item ID
@@ -367,6 +415,89 @@ async function getColumnMappings() {
   }
 }
 
+/**
+ * Extract form data from Monday.com item for resume application
+ * @param {object} item - Monday.com item object
+ * @returns {object} - Form data object
+ */
+function extractFormDataFromItem(item) {
+  const formData = {};
+  
+  if (!item.column_values) {
+    return formData;
+  }
+  
+  // Map Monday.com column values back to form field names
+  // Using the actual column IDs from the board
+  const columnMapping = {
+    // Basic Info
+    'name': 'vendorName',
+    'business_tax___mknb862c': 'taxId',
+    'contact_name_mknb7bpw': 'mainContactName',
+    'email_mknbjaey': 'mainContactEmail',
+    'phone___mknbzy27': 'mainContactPhone',
+    'address_mknbb1r0': 'vendorAddress',
+    
+    // Market & Services
+    'market_mknbpdg8': 'primaryMarket',
+    'color_mkp06wz8': 'primaryTrade',
+    'color_mknsnftt': 'serviceLine',
+    'additional_services_mkns4w3n': 'additionalServices',
+    'number_of_crews_mkp19hvh': 'numberOfCrews',
+    
+    // Insurance & Licensing
+    'gl_insurance_mkp0q34y': 'glInsurance',
+    'wc_insurance_mkp0yz9d': 'wcInsurance',
+    'business_license_mkp1pz7s': 'businessLicense',
+    'gl_policy_number_mkp129c7': 'glPolicyNumber',
+    'wc_policy_number_mkp13fzw': 'wcPolicyNumber',
+    'license_number_mkp1qnj3': 'licenseNumber',
+    'license_expiration_mkp1r7sh': 'licenseExpiration',
+    
+    // Additional Info
+    'can_travel_mkp0dbfz': 'canTravel',
+    'referral_source_mkw8kbph': 'referralSource',
+    'notes_mknbkfs0': 'additionalInfo'
+  };
+  
+  item.column_values.forEach(column => {
+    const fieldName = columnMapping[column.id];
+    if (fieldName) {
+      if (column.text) {
+        formData[fieldName] = column.text;
+      } else if (column.value) {
+        try {
+          const parsedValue = JSON.parse(column.value);
+          if (parsedValue && typeof parsedValue === 'object') {
+            // Handle email type
+            if (parsedValue.email) {
+              formData[fieldName] = parsedValue.email;
+            }
+            // Handle date type
+            else if (parsedValue.date) {
+              formData[fieldName] = parsedValue.date;
+            }
+            // Handle status/dropdown type
+            else if (parsedValue.label) {
+              formData[fieldName] = parsedValue.label;
+            }
+          }
+        } catch (e) {
+          // If parsing fails, use the raw value
+          formData[fieldName] = column.value;
+        }
+      }
+    }
+  });
+  
+  // Use the item name as vendor name if not found in columns
+  if (!formData.vendorName && item.name) {
+    formData.vendorName = item.name;
+  }
+  
+  return formData;
+}
+
 module.exports = {
   testConnection,
   checkDuplicateVendor,
@@ -374,6 +505,8 @@ module.exports = {
   addFileLinksToFilesColumn,
   getColumnMappings,
   findVendorByTaxId,
+  findVendorByEmail,
   updateVendorItem,
-  updateItemName
+  updateItemName,
+  extractFormDataFromItem
 };
